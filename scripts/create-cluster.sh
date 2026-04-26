@@ -114,7 +114,7 @@ ensure_namespace() {
 # ---------- MAIN ----------
 echo
 printf "${BLUE}=======================================${RESET}\n"
-printf "${GREEN} K8s Cluster and Controller Setup Starts ${RESET}\n"
+printf "${GREEN} K8s Cluster and Controller Setup Starting 🚀 ${RESET}\n"
 printf "${BLUE}=======================================${RESET}\n"
 
 log_step "Checking tools"
@@ -141,12 +141,22 @@ log_step "Namespace setup"
 ensure_namespace
 
 log_step "Installing controllers"
-"${SCRIPT_DIR}/controllers-setup.sh"
+"${SCRIPT_DIR}/create-controllers.sh"
+
+log_step "Starting Cloudflare Tunnel (background mode)"
+chmod +x "${SCRIPT_DIR}/setup_tunnel.sh"
+"${SCRIPT_DIR}/setup_tunnel.sh" --background
+sleep 3  # Give tunnel time to start
 
 log_success "Cluster setup complete 🚀"
 
 echo
 printf "${BLUE}=======================================${RESET}\n"
 printf "${GREEN} K8s Cluster and Controller Setup Complete 🎉${RESET}\n"
+printf "\n"
+printf "${CYAN}📡 Cloudflare Tunnel is running in the background!${RESET}\n"
+printf "${CYAN}   It will automatically detect and route new ingresses.${RESET}\n"
+printf "${CYAN}   Monitor logs:  tail -f /tmp/tunnel-monitor.log${RESET}\n"
+printf "\n"
 printf "${BLUE}=======================================${RESET}\n"
 echo

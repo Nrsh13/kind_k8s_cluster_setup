@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-dev-cluster}"
+CLUSTER_NAME="${CLUSTER_NAME:-k8s}"
 
 # ---------- COLORS ----------
 if [[ -t 1 ]]; then
@@ -36,6 +36,6 @@ fi
 
 echo
 printf "${BLUE}=======================================${RESET}\n"
-printf "${GREEN} K8s Cluster Deleted Successfully !! ${RESET}\n"
+printf "${GREEN} K8s Cluster Deleted Successfully !! 🎉 ${RESET}\n"
 printf "${BLUE}=======================================${RESET}\n"
 echo
