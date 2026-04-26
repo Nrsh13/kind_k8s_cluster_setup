@@ -14,25 +14,6 @@ When you run the setup, it:
 - installs `ingress-nginx` in `nrsh13`
 - creates or refreshes the wildcard certificate and TLS secret when needed
 
-## Prerequisites
-
-Before running the scripts, make sure you have:
-
-- macOS
-- Homebrew
-- Docker Desktop or another Docker-compatible runtime
-- access to your Cloudflare account
-
-The setup scripts can install missing local tools such as:
-
-- `kind`
-- `kubectl`
-- `helm`
-- `kubeseal`
-- `kustomize`
-- `docker`
-- `etcd`
-- `colima` if Docker runtime is not available
 
 ## Cloudflare and DNS Prerequisites
 
@@ -146,30 +127,7 @@ If Jenkins is still starting, you may briefly see `503 Service Temporarily Unava
 
 ## Cloudflare Tunnel Setup
 
-The tunnel script is:
-
-- `scripts/setup_tunnel.sh`
-
-It does the following:
-
-1. checks whether `cloudflared` is installed
-2. installs it with Homebrew if missing
-3. runs `cloudflared tunnel login`
-4. creates a tunnel called `kind-tunnel` if it does not already exist
-5. creates `~/.cloudflared/config.yml`
-6. creates the DNS routes for the Jenkins hostnames you want to expose
-7. starts the tunnel
-
-By default, it handles both:
-
-- `nrsh13-jenkins-dev.nrsh13-hadoop.com`
-- `nrsh13-jenkins-prod.nrsh13-hadoop.com`
-
 The tunnel forwards traffic to the local Jenkins ingress using the correct host header.
-
-### Run the Tunnel
-
-From the repo root:
 
 ```bash
 cd kind_k8s_cluster_setup
@@ -182,6 +140,11 @@ You can also run it for a single overlay only:
 ./scripts/setup_tunnel.sh dev
 ./scripts/setup_tunnel.sh prod
 ```
+By default, it handles both:
+
+- `nrsh13-jenkins-dev.nrsh13-hadoop.com`
+- `nrsh13-jenkins-prod.nrsh13-hadoop.com`
+
 
 ### Public Jenkins URL
 
@@ -197,40 +160,6 @@ If you redeploy Jenkins and test immediately:
 - browser access through Cloudflare may temporarily show errors
 - a short delay is normal while the new Jenkins pod becomes ready
 
-If that happens, check:
-
-```bash
-kubectl get pods -n jenkins-dev
-kubectl get all -n jenkins-dev
-```
-
-Wait until the Jenkins pod is `1/1 Running`.
-
-## Useful Commands
-
-### Cluster
-
-```bash
-kubectl cluster-info --context kind-dev-cluster
-kubectl get nodes
-kubectl get pods -A
-```
-
-### Controllers
-
-```bash
-kubectl get pods -n nrsh13
-kubectl get svc -n nrsh13
-kubectl get ingress -A
-```
-
-### Jenkins
-
-```bash
-kubectl get all -n jenkins-dev
-kubectl logs -n jenkins-dev -l app=jenkins -c jenkins
-kubectl logs -n jenkins-dev -l app=jenkins -c install-plugins
-```
 
 ## Delete the Cluster
 
@@ -240,14 +169,6 @@ To tear everything down:
 cd kind_k8s_cluster_setup
 ./scripts/delete-cluster.sh
 ```
-
-This deletes the `kind` cluster named `dev-cluster`.
-
-It does not remove:
-
-- your Cloudflare tunnel
-- your Cloudflare DNS setup
-- your local `~/.cloudflared` files
 
 ## Summary
 
