@@ -1,4 +1,3 @@
-````markdown
 # 🚀 Kind Kubernetes + Jenkins (Local Dev Setup)
 
 Lightweight local Kubernetes setup using **kind**, with:
