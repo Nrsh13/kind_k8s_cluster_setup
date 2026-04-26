@@ -33,3 +33,9 @@ if kind get clusters 2>/dev/null | grep -Fxq "${CLUSTER_NAME}"; then
 else
   log_warning "Cluster '${CLUSTER_NAME}' does not exist"
 fi
+
+echo
+printf "${BLUE}=======================================${RESET}\n"
+printf "${GREEN} K8s Cluster Deleted Successfully !! ${RESET}\n"
+printf "${BLUE}=======================================${RESET}\n"
+echo
