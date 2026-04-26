@@ -24,7 +24,7 @@ else
 fi
 
 # ---------- LOGGING ----------
-log_step()    { printf "\n${BLUE}▶ %s${RESET}\n" "$*"; }
+log_step()    { printf "\n${BLUE}▶ %s\n${RESET}\n" "$*"; }
 log_info()    { printf "${CYAN}[INFO]${RESET} %s\n" "$*"; }
 log_success() { printf "${GREEN}[SUCCESS]${RESET} %s\n" "$*"; }
 log_warning() { printf "${YELLOW}[WARN]${RESET} %s\n" "$*"; }

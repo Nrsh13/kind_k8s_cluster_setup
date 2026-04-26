@@ -1,25 +1,11 @@
 #!/bin/bash
 
-set -euo pipefail
-
-# ---------- COLORS ----------
-if [[ -t 1 ]]; then
-  GREEN=$'\033[1;32m'
-  CYAN=$'\033[1;36m'
-  YELLOW=$'\033[1;33m'
-  RED=$'\033[1;31m'
-  BLUE=$'\033[1;34m'
-  RESET=$'\033[0m'
-else
-  GREEN=""; CYAN=""; YELLOW=""; RED=""; BLUE=""; RESET=""
-fi
-
-# ---------- LOGGING FUNCTIONS ----------
-log_info()    { printf "${CYAN}[INFO]${RESET} %s\n" "$*"; }
-log_success() { printf "${GREEN}[SUCCESS]${RESET} %s\n" "$*"; }
-log_warning() { printf "${YELLOW}[WARN]${RESET} %s\n" "$*" >&2; }
-log_error()   { printf "${RED}[ERROR]${RESET} %s\n" "$*" >&2; }
-log_step()    { printf "\n${BLUE}▶ %s${RESET}\n" "$*"; }
+# Define colors for output
+BOLD_GREEN='\033[1;32m'
+BOLD_YELLOW='\033[1;33m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
 # Print the Usage
 usage="
@@ -28,8 +14,25 @@ Usage: Pass Overlay Tooling and Environment as Arguments
         sh $0 --tooling kustomize [--environment dev|ppte|prod|etc]
 "
 
+# Define logging functions
+log_info() {
+      echo  "${CYAN}[INFO] $1${NC}"
+}
+
+log_success() {
+      echo  "${BOLD_GREEN}[SUCCESS] $1${NC}"
+}
+
+log_error() {
+      echo  "${RED}[ERROR] $1${NC}"
+}
+
+log_warning() {
+      echo  "${BOLD_YELLOW}[WARNING] $1${NC}"
+}
+
 # Loop through command-line arguments to get values of options:
-while [ "X${1:-}" != "X" ]; do
+while [ "X${1}" != "X" ]; do
     case $1 in
         --tooling )
             shift
@@ -44,7 +47,7 @@ while [ "X${1:-}" != "X" ]; do
             exit 1
             ;;
         * ) 
-            log_error "Invalid options in $0"
+            log_error "$(date) Invalid options in $0"
             log_info "$usage"
             exit 1
             ;;
@@ -66,49 +69,29 @@ if [[ -z ${OVERLAY_ENV} ]]; then
     exit 1
 fi
 
-# ---------- SETUP ----------
-echo
-printf "${BLUE}=======================================${RESET}\n"
-printf "${GREEN} Sealed Secrets Setup for ${OVERLAY_ENV} 🔐 ${RESET}\n"
-printf "${BLUE}=======================================${RESET}\n"
-
-log_step "Checking environment variables"
-log_info "NOTE: This script uses GITHUB_USER, GITHUB_TOKEN, BITBUCKET_USER, BITBUCKET_TOKEN from .bashrc"
-log_info "DUMMY will be used if not defined"
-
-log_step "Fetching sealed-secrets certificate from cluster"
-rm -rf temp_dir
-mkdir temp_dir
-cp setup-sealed-secret.sh temp_dir/
-cd temp_dir
-chmod +x setup-sealed-secret.sh
+log_info "NOTE: This script uses GITHUB_USER, GITHUB_TOKEN, BITBUCKET_USER, BITBUCKET_TOKEN, NONPROD_AKS_SEALED_SECRET_CERT_URL, PROD_AKS_SEALED_SECRET_CERT_URL from .bashrc. DUMMY if not defined"
+log_info "Get sealed-secrets.crt - from current Cluster. Modify script if cert is available at any URL."
+rm -rf temp_dir; mkdir temp_dir; cp setup-sealed-secret.sh temp_dir/; cd temp_dir; chmod +x setup-sealed-secret.sh
 
 kubeseal --controller-name=sealed-secrets --controller-namespace=nrsh13 --fetch-cert > sealed-secrets.crt
-log_success "Certificate fetched"
 
-log_step "Validating required credentials"
+log_info "Check if BITBUCKET_TOKEN, GITHUB_TOKEN and .ssh/id_rsa exists"
 if [ -z "$BITBUCKET_TOKEN" ] || [ -z "$GITHUB_TOKEN" ]; then
-     log_warning "BITBUCKET_TOKEN or GITHUB_TOKEN not set"
-     log_warning "These will be set to DUMMY - Seed jobs may fail"
+     log_warning "Missing required file or environment variables. Kindly set in .bashrc or shell session!!"
+     log_warning "These details will be used by seed job. Make sure id_rsa key has access to your bitbucket repo."
+     log_warning "Setting DUMMY, Seed Job will FAIL!!"
     BITBUCKET_TOKEN="DUMMY"
     GITHUB_TOKEN="DUMMY"
-else
-    log_success "Credentials found"
 fi
 
 # Check if ~/.ssh/id_rsa exists
 if [ ! -f ~/.ssh/id_rsa ]; then
-     log_warning "~/.ssh/id_rsa does not exist - Creating a DUMMY one"
-     log_warning "Bitbucket SSH authentication may fail"
-    mkdir -p ~/.ssh
-    echo "DUMMY" >> ~/.ssh/id_rsa
-else
-    log_success "SSH key found: ~/.ssh/id_rsa"
+     log_warning "~/.ssh/id_rsa does not exist. Creating a DUMMY One. Seed Job will FAIL!!"
+    echo DUMMY >> ~/.ssh/id_rsa
 fi
 
-log_step "Sealing secrets"
-
-log_info "Processing bitbucket-user-pass secret..."
+log_info "Sealing secrets now..."
+log_info "Processing bitbucket-user-pass.yaml ..."
 
 # Create the plain text Bitbucket user/pass secret manifest with a placeholder for the password
 bitbucket_secret_manifest='
@@ -133,9 +116,8 @@ bitbucket_secret_manifest=$(echo "$bitbucket_secret_manifest" | sed -e "s/USER_P
 echo "$bitbucket_secret_manifest" > bitbucket-user-pass.yaml
 
 cat bitbucket-user-pass.yaml | kubeseal --cert "./sealed-secrets.crt" --scope cluster-wide -o yaml > sealed-bitbucket-user-pass.yaml
-log_success "Sealed: bitbucket-user-pass"
 
-log_info "Processing github-secret..."    
+log_info "Processing github-secret.yaml ..."    
 
 # Create the plain text GitHub token secret manifest with a placeholder for the password
 github_secret_manifest='
@@ -160,9 +142,8 @@ github_secret_manifest=$(echo "$github_secret_manifest" | sed -e "s/USER_PLACEHO
 echo "$github_secret_manifest" > github-secret.yaml
 
 cat github-secret.yaml | kubeseal --cert "./sealed-secrets.crt" --scope cluster-wide -o yaml > sealed-github-token.yaml
-log_success "Sealed: github-token"
 
-log_info "Processing bitbucket SSH key..."
+log_info "Processing bitbucket-ssh-key.yaml ..."
 
 private_key_content=$(sed 's/^/    /' ~/.ssh/id_rsa)
 
@@ -188,11 +169,8 @@ EOL
 echo "$bitbucket_ssh_key_manifest" > bitbucket-ssh-key.yaml
 
 cat bitbucket-ssh-key.yaml | kubeseal --cert "./sealed-secrets.crt" --scope cluster-wide -o yaml > sealed-bitbucket-ssh-key.yaml
-log_success "Sealed: bitbucket-ssh-key"
 
 rm -f sealed-secrets.crt
-
-log_step "Copying sealed secrets to overlay"
 
 # Initialize a flag to check if any file is empty
 empty_file_found=false
@@ -202,12 +180,11 @@ for file in "sealed-"*.yaml; do
     # Check if the file exists and is not empty
     if [ -s "$file" ]; then
         DESTINATION="overlays/$OVERLAY_ENV/secrets"
-        log_info "Copying $file → $DESTINATION/"
+        log_info "Seems Kustomize Setup, Copy secrets to the overlays/$OVERLAY_ENV/secrets folder"
         mkdir -p "$DESTINATION"
-        cp "$file" "$DESTINATION/"
-        log_success "Copied: $file"
+        cp $file "$DESTINATION/"
     else
-         log_error "File $file is empty or does not exist!"
+         log_error "File $file is empty or does not exist - Something WRONG!! Not copying the secrets!!"
         empty_file_found=true
         break
     fi
@@ -215,19 +192,7 @@ done
 
 # Check the flag, if not set, remove the temp_dir
 if [ "$empty_file_found" = false ]; then
-     log_success "All secrets sealed and copied successfully"
+     log_success "All files are sealed and copied to the overlays/$OVERLAY_ENV/secrets folder. Removing temp_dir...\n"
     cd ..
     rm -rf "temp_dir"
-    
-    echo
-    printf "${BLUE}=======================================${RESET}\n"
-    printf "${GREEN} Sealed Secrets Setup Complete ✅ ${RESET}\n"
-    printf "${BLUE}=======================================${RESET}\n"
-    printf "\n"
-    printf "${CYAN}Next Step: Deploy Jenkins${RESET}\n"
-    printf "${CYAN}  kubectl apply -k overlays/${OVERLAY_ENV}${RESET}\n"
-    printf "\n"
-else
-    log_error "Failed to seal all secrets. Please check the errors above."
-    exit 1
 fi

@@ -25,7 +25,7 @@ log_info()    { printf "${CYAN}[INFO]${RESET} %s\n" "$*"; }
 log_success() { printf "${GREEN}[SUCCESS]${RESET} %s\n" "$*"; }
 log_warning() { printf "${YELLOW}[WARN]${RESET} %s\n" "$*"; }
 log_error()   { printf "${RED}[ERROR]${RESET} %s\n" "$*" >&2; }
-log_step()    { printf "\n${BLUE}▶ %s${RESET}\n" "$*"; }
+log_step()    { printf "\n${BLUE}▶ %s\n${RESET}\n" "$*"; }
 
 # ---------- TOOLING ----------
 require_homebrew() {
