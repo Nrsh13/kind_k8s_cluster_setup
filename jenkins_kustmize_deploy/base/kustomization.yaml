@@ -1,0 +1,138 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+commonLabels:
+  app: jenkins
+
+# jenkins-jcasc configmap exclusively contains jenkins config-as-code templates
+# jcasc templates can define values for easy overlay overrides via container
+# environment variables, inherited from the jenkins-env generator.
+configMapGenerator:
+
+- name: jenkins-casc
+  files:
+    - config/base_ad_bind.yaml
+    - config/base_authorization.yaml
+    - config/base_bitbucket.yaml
+    - config/base_cloud.yaml
+    - config/base_credentials.yaml
+    - config/base_jenkins.yaml
+    - config/base_job_seed_bitbucket.yaml
+    - config/base_job_seed_github.yaml
+    - config/base_location.yaml
+    - config/base_security.yaml
+    - config/base_system_message.yaml
+    # - config/base_utils_lib.yaml # Need Read Lib repo with vars/groovy code. ERROR: Library pipeline-utils expected to contain at least one of src or vars directories
+
+- name: jenkins-env
+  literals:
+
+    ##### Jenkins.yaml Environment Variables #####
+    # Below parameter are used to install additional CLOUD (say ECS) releated plugins (configured in entrypoint of jenkins images). 
+    - JENKINS_CLOUD=AKS #or ECS
+    - JENKINS_MEMORY_GI=2
+    - JENKINS_MASTER_EXECUTORS=0
+    - EXTRA_PLUGINS="Office-365-Connector"
+    - CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
+    - ADMIN_USER=admin
+    - ADMIN_USER_PASSWORD=9992131312    
+    - USER_AD_GROUP=Managed_Jenkins_Admins
+    - AWS_REGION=ap-southeast-2
+    - INGRESS_DOMAIN=nrsh13-hadoop.com
+    - JENKINS_GLOBAL_GIT_NAME="Managed Jenkins"
+    - JENKINS_GLOBAL_GIT_EMAIL="noreply@nrsh13-${JENKINS_NAMESPACE}.${INGRESS_DOMAIN}"
+    - JENKINS_ADMIN_EMAIL="Managed Jenkins <noreply@nrsh13-${JENKINS_NAMESPACE}.${INGRESS_DOMAIN}>"
+
+    ##### K8s Cloud Config Environment Variables  #####
+    # Depends on base_cloud.yaml configurations. Different images for K8s pod (jenkins agent)
+    # To make different commands available.
+    # - JENKINS_AGENT_LABEL=any  # Commeting this - it will set label ""(empty) but jobs will work. 
+    # base_cloud.yaml needs to update to decide different labels. BUT DON NOT USE "any" in the value, else jobs will stuck. 
+    - K8S_MAX_AGENTS=5
+    - K8S_RUN_AS_USER=1000    
+    - BUILD_POD_SERVICE_ACCOUNT=jenkins
+    - JENKINS_AGENT_JNLP_IMAGE="nrsh13/inbound-agent:4.13"
+    - JENKINS_AGENT_DOCKER_IMAGE="nrsh13/tool/docker:23-dind"
+
+    ##### Seed Job Pipeline Repo Environment Variables #####
+    ## Chose Git Source - bitbucket or github
+    - JOB_DSL_GIT_SOURCE=github
+    ## MARKER FILE to decide if Jenkins should consider this repo as JOB DSLs repo and read all .groovy files.
+    - JOB_DSL_GIT_MARKER_FILE=README.md
+    ## Bitbucket
+    - JOB_DSL_BITBUCKET_REPO=nrsh2929/managed-jenkins-jobs
+    - JOB_DSL_BITBUCKET_REPO_BRANCH=master
+    - JOB_DSL_BITBUCKET_REPO_CRED=bitbucket-user-pass
+    ## Github
+    - GITHUB_API_URL=https://api.github.com
+    - JOB_DSL_GITHUB_REPO_CRED=github-token
+    - JOB_DSL_GITHUB_REPO=Nrsh13/k8s_and_ecs_deploy
+    ## Choose below if you want to scan a particular folder for jobs.groovy. else / will be scanned.
+    - JOB_DSL_GITHUB_REPO_FOLDER=managed_jenkins_jobs_dsl    
+
+    ##### Bitbucket Endpoint Environment Variables - Not required with Github #####
+    - BITBUCKET_MANAGEMENT_CRED=bitbucket-user-pass
+    - BITBUCKET_SERVER_URL=https://bitbucket.org
+    - BITBUCKET_MANAGE_HOOKS=false	
+    # To get host key: ssh-keyscan -t rsa bitbucket.org or for github ssh-keyscan -t github.com
+    - GITHUB_APPROVED_HOST_KEY=github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+    - BITBUCKET_APPROVED_HOST_KEY=bitbucket.org ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDQeJzhupRu0u0cdegZIa8e86EG2qOCsIsD1Xw0xSeiPDlCr7kq97NLmMbpKTX6Esc30NuoqEEHCuc7yWtwp8dI76EEEB1VqY9QJq6vk+aySyboD5QF61I/1WeTwu+deCbgKMGbUijeXhtfbxSxm6JwGrXrhBdofTsbKRUsrN1WoNgUa8uqN1Vx6WAJw1JHPhglEGGHea6QICwJOAr/6mrui/oB7pkaWKHj3z7d1IC4KWLtY47elvjbaTlkN04Kc/5LFEirorGYVbt15kAUlqGM65pk6ZBxtaO3+30LVlORZkxOh+LKL/BvbZ/iRNhItLqNyieoQj/uh/7Iv4uyH/cV/0b4WDSd3DptigWq84lJubb9t/DnZlrJazxyDCulTmKdOR7vs9gMTo+uoIrPSb8ScTtvw65+odKAlBj59dhnVp9zd7QUojOpXlL62Aw56U4oO+FALuevvMjiWeavKhJqlR7i5n9srYcrNV7ttmDw7kf/97P5zauIhxcjX+xHv4M=
+
+    ##### Util Libraray Environment Variables #####
+    # Need Read Lib repo with vars/groovy code. ERROR: Library pipeline-utils expected to contain at least one of src or vars directories
+    # - UTIL_DEFAULT_BRANCH=master
+    # - UTIL_DEFAULT_REPO=ssh://git@bitbucket.org:nrsh2929/managed-jenkins-jobs.git
+    # - UTIL_DEFAULT_CRED=bitbucket-ssh-key
+    - UTIL_DEFAULT_BRANCH=master
+    - UTIL_DEFAULT_REPO=https://github.com/Nrsh13/k8s_and_ecs_deploy.git
+    - UTIL_DEFAULT_CRED=github-token    
+
+- name: init-groovy-scripts
+  files:
+  - config/init-groovy-scripts/sample.groovy
+
+resources:
+- deployment.yaml
+- ingress.yaml
+- network.yaml
+- pvc.yaml
+- rbac.yaml
+- service.yaml
+
+configurations:
+- kustomize_configs/sealed-secrets.yaml
+- kustomize_configs/pvc.yaml
+- kustomize_configs/resources.yaml
+
+images:
+- name: jenkins
+  newName: nrsh13/jenkins
+  newTag: latest #2-lts
+
+# INGRESS_DOMAIN is taken from the jenkins-env ConfigMap, the config map value is consumed by
+# casc templates to correctly set the instance URL. We resuse it here in a roundabout way so
+# that variations don't have to redefine the ingress object with the correct domain, only set
+# the correct domain in their jenkins-env. Namespace is used in the ingress definition and must
+# be explicitly declared in an overlay eg.) nrsh13-hadoop.com
+vars:
+- fieldref:
+    fieldPath: data.INGRESS_DOMAIN
+  name: INGRESS_DOMAIN
+  objref:
+    apiVersion: v1
+    kind: ConfigMap
+    name: jenkins-env
+- fieldref:
+    fieldPath: metadata.namespace
+  name: JENKINS_NAMESPACE
+  objref:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: jenkins
+- fieldref:
+    fieldPath: data.JENKINS_MEMORY_GI
+  name: JENKINS_MEMORY_GI
+  objref:
+    apiVersion: v1
+    kind: ConfigMap
+    name: jenkins-env

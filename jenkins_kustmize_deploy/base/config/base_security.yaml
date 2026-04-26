@@ -1,0 +1,11 @@
+security:
+  globalJobDslSecurityConfiguration:
+    useScriptSecurity: false
+  gitHostKeyVerificationConfiguration:
+    sshHostKeyVerificationStrategy:
+      manuallyProvidedKeyVerificationStrategy:
+        # without below keys - ERROR - host key failure etc
+        # ssh-keyscan -t rsa bitbucket.org. For github - ssh-keyscan -t rsa github.com
+        approvedHostKeys: |-
+          ${BITBUCKET_APPROVED_HOST_KEY}
+          ${GITHUB_APPROVED_HOST_KEY}

@@ -1,0 +1,13 @@
+unclassified:
+  # Required for Multibranch Pipelines (seed-job)
+  bitbucketEndpointConfiguration:
+    endpoints:
+    - bitbucketServerEndpoint:
+        credentialsId: "${BITBUCKET_MANAGEMENT_CRED}"
+        displayName: "bitbucket"
+        manageHooks: "${BITBUCKET_MANAGE_HOOKS}"
+        serverUrl: "${BITBUCKET_SERVER_URL}"
+        serverVersion: VERSION_7
+        callCanMerge: false
+        callChanges: true
+        webhookImplementation: NATIVE

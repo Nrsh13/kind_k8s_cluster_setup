@@ -1,0 +1,37 @@
+jenkins:
+  # proxy:
+  #     name: "myproxy.com"
+  #     noProxyHost: |
+  #       *.abc.com
+  #       *.xyz.com
+  #       localhost
+  #       127.0.0.1
+  #     port: 10568
+  #     username: ""
+  globalNodeProperties:
+  - envVars:
+      env:
+      - key: "AWS_DEFAULT_REGION"
+        value: "${AWS_REGION}"
+  numExecutors: ${JENKINS_MASTER_EXECUTORS}
+  crumbIssuer:
+    strict:
+      checkSessionMatch: false
+      hoursValid: 1
+  markupFormatter:
+    rawHtml:
+      disableSyntaxHighlighting: false
+  # use update center puled into image at build time rather than using the live update site
+  updateCenter:
+    sites:
+    - id: "default"
+      url: "file:///opt/update-center.json"
+unclassified:
+  globalDefaultFlowDurabilityLevel:
+    durabilityHint: PERFORMANCE_OPTIMIZED
+  scmGit:
+    createAccountBasedOnEmail: false
+    globalConfigEmail: "${JENKINS_GLOBAL_GIT_EMAIL}"
+    globalConfigName: "${JENKINS_GLOBAL_GIT_NAME}"
+  ansiColorBuildWrapper:
+    globalColorMapName: "xterm"

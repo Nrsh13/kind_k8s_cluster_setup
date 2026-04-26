@@ -1,0 +1,186 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins
+spec:
+  strategy:
+    type: Recreate
+  progressDeadlineSeconds: 900
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      labels:
+        Environment: Nonprod
+        SecurityContext: Internal
+        SecurityExposure: Internal
+        app: jenkins
+    spec:
+      affinity:
+        nodeAffinity:
+          # encourage scheduling on non dynatrace nodes, but don't enforce it.
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: dynatrace
+                operator: In
+                values:
+                - "false"
+      
+      serviceAccountName: 'jenkins'
+
+      securityContext:
+        fsGroup: 1000
+
+      #######################################
+      # INIT Container to setup New Plugins.#
+      #######################################
+      
+      initContainers:
+      - name: install-plugins
+        image: jenkins
+        command:
+        - '/bin/bash'
+        - '-c'
+        env:
+        - name: JENKINS_UC_DOWNLOAD_URL
+          # parameter does not work
+          value: "https://updates.jenkins.io/download/plugins"
+        args:
+        - rm -rf /var/jenkins_home/plugins;
+          cp /usr/share/jenkins/ref/plugins/* /plugins-init;
+          if [[ -z "${EXTRA_PLUGINS}" ]]; then
+            echo "EXTRA_PLUGINS variable not defined, nothing to install";
+          else          
+            java -jar /opt/jenkins-plugin-manager.jar 
+              --jenkins-update-center file:///opt/update-center.json 
+              --jenkins-experimental-update-center file:///opt/update-center.experimental.json 
+              --jenkins-plugin-info file:///opt/plugin-versions.json 
+              --verbose 
+              --plugins "${EXTRA_PLUGINS}" -d /plugins-init;
+          fi
+        envFrom:
+        - configMapRef:
+            name: jenkins-env
+        resources:
+          limits:
+            cpu: 1
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 2Gi            
+        securityContext:
+          runAsUser: 1000
+        volumeMounts:
+        - name: plugins
+          mountPath: /plugins-init
+        # Only here temporarily to clean out plugins from the existing PVC, 
+        # once run once for each MJ deployment this can be removed.
+        - mountPath: /var/jenkins_home
+          name: jenkins-home  
+
+      #######################################
+      # Main Containers Section for Jenkins
+      #######################################                  
+
+      containers:
+      - name: jenkins
+        image: jenkins
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 50000
+          name: jnlp        
+        envFrom:
+        - configMapRef:
+            name: jenkins-env
+        env:
+        - name: JENKINS_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: TZ
+          value: 'Pacific/Auckland'
+        - name: JAVA_OPTS
+          value: >-
+            -Djenkins.install.runSetupWizard=false
+            -Djenkins.displayurl.provider=org.jenkinsci.plugins.displayurlapi.ClassicDisplayURLProvider
+            -Dhudson.security.ExtendedReadPermission=true
+            -Djenkins.security.SystemReadPermission=true
+            -Dhudson.TcpSlaveAgentListener.hostName=jenkins-jnlp4.$(JENKINS_NAMESPACE).svc.cluster.local
+            -XX:+UseParallelGC
+            -XX:MinHeapFreeRatio=20
+            -XX:MaxHeapFreeRatio=40
+            -XX:GCTimeRatio=19
+            -XX:AdaptiveSizePolicyWeight=90
+            -XX:+ExitOnOutOfMemoryError
+            -XX:MaxRAMPercentage=50.0
+            -XX:+HeapDumpOnOutOfMemoryError
+            -XX:HeapDumpPath=/dumps
+        livenessProbe:
+          httpGet:
+            path: /login
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 180
+          timeoutSeconds: 5
+          periodSeconds: 60
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /login
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+          periodSeconds: 15
+          failureThreshold: 1
+        resources:
+          requests:
+            memory: "$(JENKINS_MEMORY_GI)Gi"
+            cpu: "100m"
+            ephemeral-storage: "50Mi"
+          limits:
+            memory: "$(JENKINS_MEMORY_GI)Gi"
+            cpu: "2"
+        securityContext:
+          runAsUser: 1000
+        volumeMounts:
+        - mountPath: /var/jenkins_home
+          name: jenkins-home
+        - name: casc-config
+          mountPath: /var/jenkins_home/casc_configs
+        # - name: jenkins-ad-bind
+        #   mountPath: /secret
+        - name: init-groovy
+          mountPath: /var/jenkins_home/init.groovy.d
+        - name: heap-dumps
+          mountPath: /dumps
+        - name: plugins
+          mountPath: /var/jenkins_home/plugins        
+      volumes:
+        - name: jenkins-home
+          persistentVolumeClaim:
+            claimName: jenkins
+        - name: casc-config
+          configMap:
+            name: jenkins-casc
+        - name: env
+          configMap:
+            name: jenkins-env
+        - name: job-dsls
+          configMap:
+            name: job-dsls
+        - name: init-groovy
+          configMap:
+            name: init-groovy-scripts
+        - name: jenkins-ad-bind
+          secret:
+            secretName: jenkins-ad-bind
+        - name: heap-dumps
+          emptyDir: {}
+        - name: plugins
+          emptyDir: {}

@@ -1,0 +1,5 @@
+jenkins:
+  systemMessage: >
+    <b><span style="color: green">Welcome to Managed Jenkins</span>.</b><br>
+    <b><span style="color: blue">ECS Cloud:</span></b> Configuration is managed by <span style="color: blue">jenkins.env (in s3)</span> !!<br> 
+    <b><span style="color: blue">K8s Cloud:</span></b> Configuration is managed by <span style="color: blue">overlays/ENV/kustomization.yaml</span> !!

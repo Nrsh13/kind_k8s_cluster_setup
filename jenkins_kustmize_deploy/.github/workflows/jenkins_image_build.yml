@@ -1,0 +1,54 @@
+name: jenkins_image_build
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+    - "jenkins_image_build/*"
+    - "jenkins_inbound_agent/*"      
+    - ".github/workflows/jenkins_image_build.yml"
+  pull_request:
+    branches: [ "master" ]
+
+# env here applies to complete workflow
+env:
+  VERSION_FOLDER: "2-lts"
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      # Optional
+      # with:
+      #   repository: # optional, default is ${{ github.repository }}
+      #   ref: # optional branch name
+      #   token: # optional, default is ${{ github.token }}    
+      #   # SSH Key when we dont want to use token
+      #   ssh-key: # optional
+      #   ssh-known-hosts: # optional
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build the Docker image
+      env:
+        IMAGE_NAME: jenkins
+        IMAGE_TAG: latest
+      run: |
+        cd jenkins_image_build/${{ env.VERSION_FOLDER }}
+        make all
+
+    - name: Build Inbound Agent Docker image
+      env:
+        IMAGE_NAME: inbound-agent
+        IMAGE_TAG: latest
+      run: |
+        cd jenkins_inbound_agent/latest
+        make all        

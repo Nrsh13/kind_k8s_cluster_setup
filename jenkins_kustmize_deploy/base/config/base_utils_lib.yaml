@@ -1,0 +1,16 @@
+# Need Read Lib repo with vars/groovy code. ERROR: Library pipeline-utils expected to contain at least one of src or vars directories
+unclassified:
+  globalLibraries:
+    libraries:
+    - defaultVersion: "${UTIL_DEFAULT_BRANCH}"
+      name: "pipeline-utils"
+      implicit: true
+      includeInChangesets: false
+      retriever:
+        modernSCM:
+          scm:
+            git:
+              credentialsId: "${UTIL_DEFAULT_CRED}"
+              remote: "${UTIL_DEFAULT_REPO}"
+              traits:
+              - "gitBranchDiscovery"

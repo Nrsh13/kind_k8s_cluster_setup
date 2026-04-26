@@ -1,0 +1,138 @@
+# This is SEED Job from Bitbucket. 
+# It needs a Bitbucket Repository, SSH Key and User/Password configured with access and as Jenkins Credentials.
+# This information is being passed from config/jenkins_org.env in jenkins_ecs_deploy code.
+# Need to setup hook pattern from bitbucket, may have to replace with pipeline.
+jobs:
+  - script: |
+      if ("${JOB_DSL_GIT_SOURCE}" == "bitbucket") {
+      def (projectName,projectRepo) = "${JOB_DSL_BITBUCKET_REPO}".tokenize('/')
+      multibranchPipelineJob('seed-dsl-from-bitbucket') {
+        displayName('seed-dsl-from-bitbucket')
+        branchSources {
+          branchSource {
+            source {
+              bitbucketSCMSource {
+                id("${JOB_DSL_BITBUCKET_REPO}-seed-job")
+                serverUrl("${BITBUCKET_SERVER_URL}")
+                repoOwner(projectName)
+                repository(projectRepo)
+                credentialsId("${JOB_DSL_BITBUCKET_REPO_CRED}")
+                traits {
+                  bitbucketBranchDiscovery{
+                      strategyId(3)
+                  }
+                  cloneOptionTrait {
+                    extension {
+                        shallow(true)
+                        noTags(true)
+                        reference("")
+                        timeout(10)
+                        depth(1)
+                    }
+                  }
+                  bitbucketSshCheckout {
+                    // This SHOULD BE SSH KEY ONLY. USERNAME PASSWORD WILL NOT WORK AND CAUSE FAILURE AT GIT CLONE 
+                    credentialsId('bitbucket-ssh-key')
+                  }
+                  headWildcardFilter {
+                    includes("${JOB_DSL_BITBUCKET_REPO_BRANCH}")
+                    excludes('')
+                  }
+                }
+              }
+              strategy {
+                defaultBranchPropertyStrategy {
+                  props {
+                    // keep only the last 10 builds
+                    buildRetentionBranchProperty {
+                      buildDiscarder {
+                        logRotator {
+                          daysToKeepStr('-1')
+                          numToKeepStr('10')
+                          artifactDaysToKeepStr('-1')
+                          artifactNumToKeepStr('-1')
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        factory {
+          inlineDefinitionBranchProjectFactory {
+            // markerFile - should be available to decide if a repo should be consider job dsl repo.
+            markerFile("${JOB_DSL_GIT_MARKER_FILE}")
+            sandbox(true)
+            script('''
+              pipeline {
+                  agent {
+                    label "${JENKINS_AGENT_LABEL}"
+                  }
+
+                  triggers {
+                      pollSCM('H * * * *')
+                  }
+
+                  options {
+                    buildDiscarder(logRotator(numToKeepStr: '5'))
+                    timeout(time: 30, unit: 'MINUTES')
+                    timestamps()
+                  }
+
+                  stages {
+                    stage("Process DSL") {
+                      steps {
+                        /*
+                          Copy standard pipeline dsl libraries into consumer dsl repository root
+                          additional classpaths must be relative to dsl invocation root
+                        */
+                        //sh "cp -r utils/libs _stdlib"
+
+                        /*
+                          parse *.groovy files in all paths except where a descendant of a directory named 'libs'
+                          jobDsl invoked within consumer repository so that relative paths in consumer dsl work intuitively
+                        */
+                        script {
+                          def targets = sh(
+                            script: 'find . -type d -regextype posix-extended -not -regex "(.*/libs$|.*/libs/.*|.*/\\\\.git.*|./_stdlib)" -exec echo "{}/*.groovy" \\\\;',
+                            returnStdout: true
+                          )
+                          println("--> target paths:\\n" + targets)
+
+                          jobDsl(
+                            ignoreMissingFiles:  true,
+                            targets:             targets,
+                            //additionalClasspath: "_stdlib",
+                            removedJobAction:    'DELETE',
+                            removedViewAction:   'DELETE'
+                          )
+                        }
+
+                      }
+                    }
+                  }
+                }
+            '''.stripIndent())
+          }
+        }
+
+        // don't keep build jobs for deleted branches
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(-1)
+          }
+        }
+
+        triggers {
+          hudsonStartupTrigger {
+            quietPeriod("0")
+            runOnChoice("ON_CONNECT")
+            label("${JENKINS_AGENT_LABEL}")
+            nodeParameterName("")
+          }
+        }
+      }
+      }

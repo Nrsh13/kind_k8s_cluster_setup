@@ -1,0 +1,8 @@
+jenkins:
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: ${ADMIN_USER} # This will be USERNAME for UI Login
+          name: ${ADMIN_USER}
+          password: ${ADMIN_USER_PASSWORD}

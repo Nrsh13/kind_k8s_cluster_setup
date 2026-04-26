@@ -1,0 +1,9 @@
+varReference:
+- path: spec/template/spec/containers/resources/requests/memory
+  kind: Deployment
+- path: spec/template/spec/containers/resources/limits/memory
+  kind: Deployment
+- path: spec/jobTemplate/spec/template/spec/containers/resources/requests/memory
+  kind: CronJob
+- path: spec/jobTemplate/spec/template/spec/containers/resources/limits/memory
+  kind: CronJob
