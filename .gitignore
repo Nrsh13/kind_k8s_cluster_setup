@@ -1,0 +1,5 @@
+# Jenkins sealed secrets (dev + prod)
+jenkins/overlays/*/secrets/
+
+# Extra safety (in case of deeper nesting)
+**/secrets/*.yaml
