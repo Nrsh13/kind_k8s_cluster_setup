@@ -79,14 +79,14 @@ You should see:
 
 ## Deploy Jenkins
 
-Jenkins manifests live under `jenkins_kustmize_deploy`.
+Jenkins manifests live under `jenkins`.
 
 ### Step 1: Generate Sealed Secrets
 
 Run:
 
 ```bash
-cd kind_k8s_cluster_setup/jenkins_kustmize_deploy
+cd kind_k8s_cluster_setup/jenkins
 sh setup-sealed-secret.sh --tooling kustomize --environment dev
 ```
 
