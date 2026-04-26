@@ -31,6 +31,7 @@ kubectl apply -k overlays/prod
 ## 🌍 Access Jenkins
 
 👉 [https://nrsh13-jenkins-dev.nrsh13-hadoop.com](https://nrsh13-jenkins-dev.nrsh13-hadoop.com)
+
 👉 [https://nrsh13-jenkins-prod.nrsh13-hadoop.com](https://nrsh13-jenkins-prod.nrsh13-hadoop.com)
 
 ---
@@ -40,42 +41,11 @@ kubectl apply -k overlays/prod
 ```bash
 curl -H "Host: nrsh13-jenkins-dev.nrsh13-hadoop.com" http://localhost:8080
 curl -k -H "Host: nrsh13-jenkins-dev.nrsh13-hadoop.com" https://localhost:8443
+https://localhost:8443 - Will not work Because ingress is **host-based routing**.
+
 ```
 
 ---
-
-## ❗ Why `localhost` does NOT work
-
-Opening:
-
-```
-https://localhost:8443
-```
-
-returns:
-
-```
-404 Not Found (nginx)
-```
-
-Because ingress is **host-based routing**.
-
-Expected host:
-
-```
-nrsh13-jenkins-dev.nrsh13-hadoop.com
-```
-
-But browser sends:
-
-```
-localhost
-```
-
-→ No match → 404
-
----
-
 
 ## ☁️ Cloudflare Tunnel
 
