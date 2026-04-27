@@ -9,19 +9,89 @@ CONFIG_FILE="${CONFIG_FILE:-$HOME/.cloudflared/config.yml}"
 TUNNEL_FILE="${TUNNEL_FILE:-}"
 WATCH_INTERVAL="${WATCH_INTERVAL:-10}"  # Check for changes every 10 seconds
 LOG_FILE="${LOG_FILE:-/tmp/tunnel-monitor.log}"
-
-# Parse arguments
-BACKGROUND_MODE=false
-if [[ "$#" -gt 0 ]] && [[ "$1" == "--background" ]]; then
-  BACKGROUND_MODE=true
-  shift
-fi
+CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}"
+CLOUDFLARE_ZONE_ID=""
 
 # Setup logging
 mkdir -p "$(dirname "$LOG_FILE")"
 
 log_msg() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+get_zone_id() {
+  # Fetch zone ID from Cloudflare API using domain name
+  if [[ -z "$CLOUDFLARE_API_TOKEN" ]]; then
+    log_msg "❌ Error: CLOUDFLARE_API_TOKEN not set"
+    return 1
+  fi
+  
+  local zone_response
+  zone_response=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=${BASE_DOMAIN}" \
+    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+    -H "Content-Type: application/json" 2>/dev/null)
+  
+  local zone_id
+  zone_id=$(echo "$zone_response" | jq -r '.result[0].id // empty' 2>/dev/null)
+  
+  if [[ -z "$zone_id" ]]; then
+    log_msg "❌ Error: Could not find zone ID for domain $BASE_DOMAIN"
+    return 1
+  fi
+  
+  echo "$zone_id"
+}
+
+get_tunnel_cname() {
+  # Get the CNAME for the tunnel from tunnel credentials file
+  if [[ -f "$TUNNEL_FILE" ]]; then
+    local tunnel_uuid
+    tunnel_uuid=$(jq -r '.TunnelID' "$TUNNEL_FILE" 2>/dev/null || echo "")
+    if [[ -n "$tunnel_uuid" ]]; then
+      echo "${tunnel_uuid}.cfargotunnel.com"
+      return 0
+    fi
+  fi
+  
+  return 1
+}
+
+create_cloudflare_dns_record() {
+  local hostname="$1"
+  local tunnel_cname="$2"
+  local zone_id="$3"
+  
+  if [[ -z "$CLOUDFLARE_API_TOKEN" ]]; then
+    log_msg "⚠️  Cloudflare API token not configured, skipping DNS record creation for $hostname"
+    return 0
+  fi
+  
+  log_msg "Creating/updating Cloudflare DNS record for $hostname -> $tunnel_cname"
+  
+  # Check if DNS record already exists
+  local existing_record
+  existing_record=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records?name=${hostname}&type=CNAME" \
+    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+    -H "Content-Type: application/json" 2>/dev/null)
+  
+  local record_id
+  record_id=$(echo "$existing_record" | jq -r '.result[0].id // empty' 2>/dev/null)
+  
+  if [[ -n "$record_id" ]]; then
+    # Update existing record
+    log_msg "  ✓ Updating DNS record for $hostname"
+    curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
+      -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "{\"type\":\"CNAME\",\"name\":\"${hostname}\",\"content\":\"${tunnel_cname}\",\"ttl\":1,\"proxied\":true}" > /dev/null 2>&1
+  else
+    # Create new record
+    log_msg "  ✓ Creating DNS record for $hostname"
+    curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+      -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "{\"type\":\"CNAME\",\"name\":\"${hostname}\",\"content\":\"${tunnel_cname}\",\"ttl\":1,\"proxied\":true}" > /dev/null 2>&1
+  fi
 }
 
 get_ingress_hostnames() {
@@ -91,12 +161,32 @@ setup_cloudflare() {
   log_msg " Cloudflare Tunnel Setup"
   log_msg "======================================="
   
+  # Check for required API token
+  if [[ -z "$CLOUDFLARE_API_TOKEN" ]]; then
+    log_msg "❌ Error: CLOUDFLARE_API_TOKEN environment variable is required"
+    log_msg "Set it with: export CLOUDFLARE_API_TOKEN='<your-api-token>'"
+    return 1
+  fi
+  log_msg "✓ API token configured"
+  
+  log_msg "👉 Fetching zone ID for domain $BASE_DOMAIN..."
+  CLOUDFLARE_ZONE_ID=$(get_zone_id)
+  log_msg "✓ Zone ID: $CLOUDFLARE_ZONE_ID"
+  
   log_msg "👉 Checking cloudflared installation..."
   if ! command -v cloudflared >/dev/null 2>&1; then
     log_msg "Installing cloudflared..."
     brew install cloudflared
   else
     log_msg "✓ cloudflared already installed"
+  fi
+  
+  log_msg "👉 Checking required tools..."
+  if ! command -v jq >/dev/null 2>&1; then
+    log_msg "Installing jq..."
+    brew install jq
+  else
+    log_msg "✓ jq already installed"
   fi
   
   log_msg "👉 Checking Cloudflare authentication..."
@@ -141,62 +231,57 @@ setup_dns_routes() {
     return
   fi
   
+  # Get tunnel CNAME
+  local tunnel_cname
+  if ! tunnel_cname=$(get_tunnel_cname); then
+    log_msg "❌ Error: Could not determine tunnel CNAME"
+    return 1
+  fi
+  
+  log_msg "📌 Tunnel CNAME: $tunnel_cname"
+  
   echo "$hostnames" | while read -r hostname; do
     if [[ -n "$hostname" ]]; then
-      log_msg "Routing DNS for ${hostname}"
-      cloudflared tunnel route dns "${TUNNEL_NAME}" "${hostname}" 2>/dev/null || true
+      # Create Cloudflare DNS record
+      create_cloudflare_dns_record "${hostname}" "${tunnel_cname}" "${CLOUDFLARE_ZONE_ID}"
     fi
-  done
-}
-
-monitor_ingresses() {
-  log_msg "======================================="
-  log_msg " Starting Ingress Monitor (PID: $$)"
-  log_msg "======================================="
-  log_msg "Monitoring interval: ${WATCH_INTERVAL}s"
-  log_msg "Log file: ${LOG_FILE}"
-  
-  local last_state=""
-  local first_run=true
-  
-  while true; do
-    local current_state
-    current_state=$(get_ingress_hostnames | sort)
-    
-    # Check if ingresses have changed
-    if [[ "$current_state" != "$last_state" ]] || [[ "$first_run" == true ]]; then
-      log_msg "📋 Ingress configuration changed, updating tunnel..."
-      generate_tunnel_config "$CONFIG_FILE"
-      setup_dns_routes
-      restart_tunnel
-      last_state="$current_state"
-      first_run=false
-    fi
-    
-    sleep "$WATCH_INTERVAL"
   done
 }
 
 # Main execution
-if [[ "$BACKGROUND_MODE" == true ]]; then
-  # Run setup once, then monitor in background
-  setup_cloudflare
-  generate_tunnel_config "$CONFIG_FILE"
-  restart_tunnel
+log_msg "======================================="
+log_msg "Starting Tunnel Monitor"
+log_msg "======================================="
+
+# One-time setup
+setup_cloudflare
+generate_tunnel_config "$CONFIG_FILE"
+setup_dns_routes
+restart_tunnel
+
+# Monitor for ingress changes
+log_msg ""
+log_msg "👉 Starting continuous monitoring for ingress changes..."
+log_msg "📝 Log file: tail -f $LOG_FILE"
+log_msg ""
+
+last_state=""
+first_run=true
+
+while true; do
+  current_state=$(get_ingress_hostnames | sort)
   
-  # Daemonize the monitoring
-  log_msg "Starting background monitoring..."
-  nohup bash -c "source '$0'; monitor_ingresses" >> "$LOG_FILE" 2>&1 &
-  monitor_pid=$!
-  log_msg "✅ Background monitor started with PID: $monitor_pid"
-  log_msg "📝 Monitor logs: tail -f $LOG_FILE"
-else
-  # Original interactive mode
-  setup_cloudflare
-  generate_tunnel_config "$CONFIG_FILE"
-  setup_dns_routes
-  restart_tunnel
+  # Check if ingresses have changed
+  if [[ "$current_state" != "$last_state" ]] || [[ "$first_run" == true ]]; then
+    if [[ "$first_run" == false ]]; then
+      log_msg "📋 Ingress configuration changed, updating tunnel..."
+    fi
+    generate_tunnel_config "$CONFIG_FILE"
+    setup_dns_routes
+    restart_tunnel
+    last_state="$current_state"
+    first_run=false
+  fi
   
-  log_msg "👉 Starting ingress monitoring (will update tunnel automatically)..."
-  monitor_ingresses
-fi
+  sleep "$WATCH_INTERVAL"
+done

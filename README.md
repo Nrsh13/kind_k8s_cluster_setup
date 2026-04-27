@@ -89,10 +89,23 @@ The tunnel monitors for changes every 10 seconds and:
 5. ✅ Logs all actions with timestamps
 
 **Example:** When you deploy Jenkins, the tunnel automatically:
-- Detects `nrsh13-jenkins-dev.nrsh13-hadoop.com`
+- Detects the ingress `HOSTS` (e.g. `nrsh13-jenkins-dev.local.nrsh13-hadoop.com` in any namespace)
 - Adds it to the tunnel configuration
-- Routes DNS through Cloudflare
-- Makes it accessible globally in seconds!
+- Runs `cloudflared tunnel route dns` for that hostname
+- Restarts the tunnel
+
+### If Cloudflare has no DNS record
+
+Failure reasons are written to `tail -f /tmp/tunnel-monitor.log` (the script no longer hides `cloudflared` errors). Common causes: **(1)** `--background` used to start the **monitor in a `source` subshell** that re-ran setup and never aligned with a stable `kubectl` context; that is **fixed** with a dedicated `--monitor` mode and explicit `KUBECONFIG` in the monitor. **(2)** The hostname is not in a **Cloudflare zone** the tunnel is allowed to change (log will show the API error). **(3)** Jenkins came up **after** a broken monitor: fix kubectl context, then run:
+
+```bash
+# One hostname (use your k get ingress -n <ns> host)
+cloudflared tunnel route dns kind-tunnel 'nrsh13-jenkins-dev.local.nrsh13-hadoop.com'
+
+# Or re-run the full background tunnel + watch loop
+pkill -f "cloudflared tunnel run" 2>/dev/null; pkill -f "setup_tunnel.sh --monitor" 2>/dev/null
+./scripts/setup_tunnel.sh --background
+```
 
 ---
 

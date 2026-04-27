@@ -10,7 +10,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: nrsh13-$(JENKINS_NAMESPACE).$(INGRESS_DOMAIN)
+    - host: $(JENKINS_NAMESPACE).$(INGRESS_DOMAIN)
       http:
         paths:
           - path: /
