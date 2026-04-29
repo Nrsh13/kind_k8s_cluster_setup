@@ -148,7 +148,32 @@ chmod +x "${SCRIPT_DIR}/setup_tunnel.sh"
 "${SCRIPT_DIR}/setup_tunnel.sh" --background
 sleep 3  # Give tunnel time to start
 
-log_success "Cluster setup complete 🚀"
+log_step "Jenkins deploy instructions (manual)"
+JENKINS_KUSTOMIZE_ROOT="${JENKINS_KUSTOMIZE_ROOT:-$HOME/GitHub/06_k8s_and_ecs_deploy/jenkins_k8s_deploy/kustomize}"
+cat <<EOF
+${BLUE}=======================================${RESET}
+${GREEN} To deploy Jenkins manually after setup:${RESET}
+
+1) Generate sealed secrets (from shared Jenkins repo)
+   cd "${JENKINS_KUSTOMIZE_ROOT}/.." && sh setup-sealed-secret.sh --tooling kustomize --environment dev
+   cd "${JENKINS_KUSTOMIZE_ROOT}/.." && sh setup-sealed-secret.sh --tooling kustomize --environment prod
+
+2) Deploy Jenkins overlays (shared kustomize code)
+   kubectl apply -k "${JENKINS_KUSTOMIZE_ROOT}/overlays/dev"
+   kubectl apply -k "${JENKINS_KUSTOMIZE_ROOT}/overlays/prod"
+
+3) Patch ingress for Cloudflare tunnel (tunnel -> HTTP origin)
+   # wait for ingress 'jenkins' in each namespace, then:
+   kubectl -n jenkins-dev annotate ingress jenkins \
+     nginx.ingress.kubernetes.io/force-ssl-redirect=false \
+     nginx.ingress.kubernetes.io/ssl-redirect=false --overwrite
+   kubectl -n jenkins-prod annotate ingress jenkins \
+     nginx.ingress.kubernetes.io/force-ssl-redirect=false \
+     nginx.ingress.kubernetes.io/ssl-redirect=false --overwrite
+
+${GREEN}Done. Tunnel will auto-discover new ingresses.${RESET}
+${BLUE}=======================================${RESET}
+EOF
 
 echo
 printf "${BLUE}=======================================${RESET}\n"

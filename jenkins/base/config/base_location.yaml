@@ -1,6 +1,0 @@
-unclassified:
-  # INGRESS_DOMAIN depends on platform, eg.) cloud.nz.thenational.com
-  # JENKINS_NAMESPACE set in base/deployment.yaml using k8s download api
-  location:
-    adminAddress: "${JENKINS_ADMIN_EMAIL}"
-    url: "https://nrsh13-${JENKINS_NAMESPACE}.${INGRESS_DOMAIN}"

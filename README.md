@@ -14,6 +14,20 @@ Lightweight local Kubernetes setup using **kind**, with:
 ./scripts/create-cluster.sh
 ```
 
+## ⚙️ Deploy Jenkins (right after)
+```bash
+kubectl apply -k ~/GitHub/06_k8s_and_ecs_deploy/jenkins_k8s_deploy/kustomize/overlays/dev
+kubectl -n jenkins-dev annotate ingress jenkins \
+  nginx.ingress.kubernetes.io/force-ssl-redirect=false \
+  nginx.ingress.kubernetes.io/ssl-redirect=false --overwrite
+
+kubectl apply -k ~/GitHub/06_k8s_and_ecs_deploy/jenkins_k8s_deploy/kustomize/overlays/prod
+kubectl -n jenkins-prod annotate ingress jenkins \
+  nginx.ingress.kubernetes.io/force-ssl-redirect=false \
+  nginx.ingress.kubernetes.io/ssl-redirect=false --overwrite
+```
+Reason: the Jenkins ingress template enables TLS/redirect behavior, but the Cloudflare tunnel proxies to an HTTP origin; without disabling `ssl-redirect`, nginx returns `308` to HTTPS and the UI won’t load through the tunnel.
+
 This will:
 1. ✅ Create a local Kubernetes cluster (1 control-plane + 3 workers)
 2. ✅ Install required controllers (Sealed Secrets, Ingress Nginx)
@@ -26,16 +40,7 @@ This will:
 ---
 
 ## ⚙️ Deploy Jenkins
-
-```bash
-cd jenkins
-sh setup-sealed-secret.sh --tooling kustomize --environment dev
-sh setup-sealed-secret.sh --tooling kustomize --environment prod
-kubectl apply -k overlays/dev
-kubectl apply -k overlays/prod
-```
-
-The tunnel will automatically detect the Jenkins ingresses and route them!
+Commands are included above (immediately after `create-cluster.sh`).
 
 ---
 

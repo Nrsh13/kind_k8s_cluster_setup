@@ -15,8 +15,14 @@ CLOUDFLARE_ZONE_ID=""
 # Setup logging
 mkdir -p "$(dirname "$LOG_FILE")"
 
+PRINT_TO_STDOUT="${PRINT_TO_STDOUT:-true}" # when false, logs are written only to LOG_FILE
+
 log_msg() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+  if [[ "${PRINT_TO_STDOUT}" == "true" ]]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+  else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+  fi
 }
 
 get_zone_id() {
@@ -221,6 +227,15 @@ restart_tunnel() {
   log_msg "✓ Tunnel started with PID: $pid"
 }
 
+is_tunnel_process_running() {
+  # Best-effort check: if a cloudflared tunnel run process exists and references our tunnel name, we assume it's running.
+  # (cloudflared command line typically includes the tunnel name as an argument.)
+  if pgrep -af "cloudflared tunnel run" 2>/dev/null | grep -Fq "${TUNNEL_NAME}"; then
+    return 0
+  fi
+  return 1
+}
+
 setup_dns_routes() {
   log_msg "👉 Setting up DNS routes for ingresses..."
   local hostnames
@@ -248,40 +263,81 @@ setup_dns_routes() {
   done
 }
 
-# Main execution
-log_msg "======================================="
-log_msg "Starting Tunnel Monitor"
-log_msg "======================================="
-
-# One-time setup
-setup_cloudflare
-generate_tunnel_config "$CONFIG_FILE"
-setup_dns_routes
-restart_tunnel
-
-# Monitor for ingress changes
-log_msg ""
-log_msg "👉 Starting continuous monitoring for ingress changes..."
-log_msg "📝 Log file: tail -f $LOG_FILE"
-log_msg ""
-
-last_state=""
-first_run=true
-
-while true; do
-  current_state=$(get_ingress_hostnames | sort)
-  
-  # Check if ingresses have changed
-  if [[ "$current_state" != "$last_state" ]] || [[ "$first_run" == true ]]; then
-    if [[ "$first_run" == false ]]; then
-      log_msg "📋 Ingress configuration changed, updating tunnel..."
-    fi
-    generate_tunnel_config "$CONFIG_FILE"
-    setup_dns_routes
-    restart_tunnel
-    last_state="$current_state"
-    first_run=false
+run_tunnel_monitor() {
+  # Main execution
+  if is_tunnel_process_running; then
+    log_msg "Cloudflare tunnel '${TUNNEL_NAME}' already running. Skipping tunnel setup/monitor."
+    return 0
   fi
-  
-  sleep "$WATCH_INTERVAL"
+
+  log_msg "======================================="
+  log_msg "Starting Tunnel Monitor"
+  log_msg "======================================="
+
+  # One-time setup
+  setup_cloudflare
+  generate_tunnel_config "$CONFIG_FILE"
+  setup_dns_routes
+  restart_tunnel
+
+  # Monitor for ingress changes
+  log_msg ""
+  log_msg "👉 Starting continuous monitoring for ingress changes..."
+  log_msg "📝 Log file: tail -f $LOG_FILE"
+  log_msg ""
+
+  last_state=""
+  first_run=true
+
+  while true; do
+    current_state=$(get_ingress_hostnames | sort)
+
+    # Check if ingresses have changed
+    if [[ "$current_state" != "$last_state" ]] || [[ "$first_run" == true ]]; then
+      if [[ "$first_run" == false ]]; then
+        log_msg "📋 Ingress configuration changed, updating tunnel..."
+      fi
+      generate_tunnel_config "$CONFIG_FILE"
+      setup_dns_routes
+      restart_tunnel
+      last_state="$current_state"
+      first_run=false
+    fi
+
+    sleep "$WATCH_INTERVAL"
+  done
+}
+
+MODE="foreground"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --background)
+      MODE="background"
+      shift
+      ;;
+    --monitor)
+      MODE="monitor"
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
 done
+
+if [[ "${MODE}" == "background" ]]; then
+  if is_tunnel_process_running; then
+    echo "Cloudflare tunnel '${TUNNEL_NAME}' is already running. Skipping setup. Logs: ${LOG_FILE}"
+    exit 0
+  fi
+
+  # Run monitor loop detached; logs are written to LOG_FILE.
+  # PRINT_TO_STDOUT=false prevents duplicated output.
+  nohup env PRINT_TO_STDOUT=false "$0" --monitor >/dev/null 2>&1 &
+  echo "Cloudflare tunnel monitor started in background. Logs: ${LOG_FILE}"
+  exit 0
+fi
+
+# FOREGROUND / MONITOR
+run_tunnel_monitor
